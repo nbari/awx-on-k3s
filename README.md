@@ -120,3 +120,83 @@ Create a proxy:
     
 Login using the token here: http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/#/login
 
+
+# Install AWX
+
+Use `awx` namespace:
+
+    export NAMESPACE=awx
+    kubectl create ns ${NAMESPACE}
+    
+Set current context to value set in NAMESPACE variable:
+
+    kubectl config set-context --current --namespace=$NAMESPACE 
+    
+    
+Clone https://github.com/ansible/awx-operator
+
+    cd awx-operator/
+    make deploy
+    
+    
+Create Static data PVC - https://github.com/ansible/awx-operator#persisting-projects-directory
+
+```
+cat <<EOF | kubectl create -f -
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: static-data-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi
+EOF
+```
+
+create AWX deployment file `awx-deploy.yml` with basic information about what is installed:
+
+```
+---
+apiVersion: awx.ansible.com/v1beta1
+kind: AWX
+metadata:
+  name: awx
+spec:
+  service_type: nodeport
+  projects_persistence: true
+  projects_storage_access_mode: ReadWriteOnce
+  web_extra_volume_mounts: |
+    - name: static-data
+      mountPath: /var/lib/awx/public
+  extra_volumes: |
+    - name: static-data
+      persistentVolumeClaim:
+        claimName: static-data-pvc
+```
+
+Apply configuration manifest file:
+
+    kubectl apply -f awx-deploy.yml
+    
+    
+List all available services and check awx-service Nodeport:
+
+    kubectl get svc -l "app.kubernetes.io/managed-by=awx-operator"
+    
+You can edit the Node Port and set to figure of your preference, but has to be >=32000
+
+    kubectl edit svc awx-service
+    
+
+    ....
+    ports:
+    - name: http
+      nodePort: 32000
+      port: 80
+      protocol: TCP
+      targetPort: 8052
+    ....
